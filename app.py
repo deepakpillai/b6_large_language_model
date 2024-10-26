@@ -10,20 +10,36 @@ import torch.nn.functional as F
 import wandb  # For experiment tracking
 from torch.nn import LayerNorm
 
+# For different GPU memory sizes:
+
+# 8GB GPU: Use BATCH_SIZE=8, SEQ_LENGTH=256
+# 16GB GPU: Use the recommended values above
+# 24GB+ GPU: Can increase BATCH_SIZE to 32 or SEQ_LENGTH to 1024
 # Hyperparameters
 class Config:
-    VOCAB_SIZE = 30522
-    EMBED_SIZE = 768  # Increased for better representation
-    NUM_HEADS = 12    # Increased number of attention heads
-    NUM_LAYERS = 12   # Increased number of layers
-    HIDDEN_DIM = 3072 # Increased hidden dimension
-    BATCH_SIZE = 32   # Increased batch size
-    SEQ_LENGTH = 256  # Increased sequence length
+    VOCAB_SIZE = 50257 # Matches GPT-2's vocabulary size which is ideal
+    EMBED_SIZE = 1024  #1024 for better representation capacity
+    NUM_HEADS = 16    # (embed_size/64 is a common ratio)
+    NUM_LAYERS = 24   # for deeper network capacity
+    HIDDEN_DIM = 4096 # 4096 (roughly 4x embed_size is common)
+    BATCH_SIZE = 12   # Reduce from 32 to 16 (for 16gb ram) to handle memory constraints
+    SEQ_LENGTH = 256  # Increase to 512 for better context handling
     EPOCHS = 5
     LEARNING_RATE = 1e-4
-    WARMUP_STEPS = 1000
+    WARMUP_STEPS = 2000 # Increase for more stable training
     DROPOUT = 0.1
     GRADIENT_CLIP = 1.0
+    NUM_WORKERS = 0  # Changed to 0 initially to debug
+    DATASET_SIZE = 20
+    #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 Medium Training Run; DATASET_SIZE = 8000000 or None  # Full dataset
+    STREAM_BUFFER_SIZE = 10000  # Number of examples to buffer
+    CACHE_DIR = "./dataset_cache"
+    MAP_BATCH_SIZE = 1000
+    
+    # Dataset specific parameters
+    DATASET_NAME = "c4"  # Change this to use different datasets
+    TEXT_COLUMN = "text"  # Change based on dataset
+    GRADIENT_ACCUMULATION_STEPS = 8
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -168,7 +184,7 @@ def create_optimizer(model, config):
 def train_model(model, train_loader, valid_loader, config, tokenizer):
     print("Initializing wandb...")
     # wandb.init(project="language-model-training")
-    
+    accumulation_steps = config.GRADIENT_ACCUMULATION_STEPS
     print("Setting up training...")
     optimizer = create_optimizer(model, config)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.EPOCHS)
@@ -197,12 +213,18 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
                 shift_labels = input_ids[..., 1:].contiguous()
                 loss = criterion(shift_logits.view(-1, config.VOCAB_SIZE), 
                               shift_labels.view(-1))
+                
             
+            loss = loss / accumulation_steps
             scaler.scale(loss).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.GRADIENT_CLIP)
-            scaler.step(optimizer)
-            scaler.update()
-            
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.GRADIENT_CLIP)            
+            # scaler.step(optimizer)
+            # scaler.update()
+            if (batch_idx + 1) % accumulation_steps == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+
             train_loss += loss.item()
             avg_loss = train_loss / (batch_idx + 1)
             progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
@@ -300,23 +322,6 @@ import numpy as np
 from typing import Dict, List, Tuple
 import os
 
-# Hyperparameters remain the same
-class Config:
-    VOCAB_SIZE = 50257
-    EMBED_SIZE = 768
-    NUM_HEADS = 12
-    NUM_LAYERS = 12
-    HIDDEN_DIM = 3072
-    BATCH_SIZE = 8
-    SEQ_LENGTH = 256
-    EPOCHS = 3
-    LEARNING_RATE = 1e-4
-    WARMUP_STEPS = 1000
-    DROPOUT = 0.1
-    GRADIENT_CLIP = 1.0
-    NUM_WORKERS = 0  # Changed to 0 initially to debug
-    DATASET_SIZE = 200
-    #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 Medium Training Run; DATASET_SIZE = 8000000 or None  # Full dataset
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -355,28 +360,130 @@ def collate_fn(batch):
     # Don't move tensors to device here anymore
     return input_ids, attention_mask
 
+def prepare_dataset_streaming(config, tokenizer):
+    dataset = load_dataset(
+        config.DATASET_NAME,
+        streaming=True,
+        split='train',
+        trust_remote_code=True,
+        cache_dir=config.CACHE_DIR
+    )
+    
+    def preprocess_function(examples):
+        return tokenizer(
+            examples[config.TEXT_COLUMN],
+            truncation=True,
+            max_length=config.SEQ_LENGTH,
+            padding='max_length',
+            return_tensors="pt"
+        )
+    
+    # Process in batches
+    dataset = dataset.map(
+        preprocess_function,
+        batched=True,
+        batch_size=config.MAP_BATCH_SIZE,
+        remove_columns=[config.TEXT_COLUMN]
+    )
+    
+    return dataset
+
+def load_mixed_datasets(config):
+    datasets = []
+    
+    # Load multiple datasets
+    for dataset_name in ["wikitext", "wikitext-103-v1"]:
+        dataset = load_dataset(
+            dataset_name,
+            streaming=True,
+            split='train',
+            trust_remote_code=True,
+            cache_dir=config.CACHE_DIR
+        )
+        datasets.append(dataset)
+    
+    # Interleave datasets
+    def mixed_generator():
+        iterators = [iter(dataset) for dataset in datasets]
+        while True:
+            for iterator in iterators:
+                try:
+                    yield next(iterator)
+                except StopIteration:
+                    break
+    
+    return mixed_generator()
+
 def prepare_dataloaders(config):
     print("Loading and configuring tokenizer...")
     tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
-    
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = 'right'
     
-    print("Loading OpenWebText dataset...")
-    dataset = load_dataset("openwebtext", streaming=True, split='train')
+    # Choose your dataset configuration
+    DATASET_CONFIG = {
+        'openwebtext2': {
+            'name': "the_pile_openwebtext2",
+            'text_column': 'text',
+        },
+        'redpajama': {
+            'name': "togethercomputer/RedPajama-Data-1T",
+            'text_column': 'text',
+        },
+        'oscar': {
+            'name': "oscar-corpus/OSCAR-2301",
+            'text_column': 'text',
+        },
+        'stack': {
+            'name': "bigcode/the-stack",
+            'text_column': 'content',
+        },
+        'books3': {
+            'name': "the_pile_books3",
+            'text_column': 'text',
+        },
+        'openwebtext': {
+            'name': "openwebtext",
+            'text_column': 'text'
+        },
+        'c4': {
+            'name': "allenai/c4",
+            'text_column': 'text',
+        }
+    }
     
-    dataset = list(dataset.take(config.DATASET_SIZE))
+    # Select dataset configuration
+    # dataset_config = DATASET_CONFIG['openwebtext2']  # Change this to use different datasets
+    dataset_config = DATASET_CONFIG[config.DATASET_NAME]
+
+    print(f"Loading {dataset_config['name']} dataset...")
+    
+    # Efficient streaming implementation
+    dataset = load_dataset(
+        dataset_config['name'], "en",
+        streaming=True,
+        split='train',
+        trust_remote_code=True,
+        cache_dir=config.CACHE_DIR
+    )
+    
+    def data_generator():
+        for i, example in enumerate(dataset):
+            if i >= config.DATASET_SIZE:
+                break
+            # Get text from correct column
+            text = example[dataset_config['text_column']]
+            yield {'text': text}
+    
+    dataset = list(data_generator())
     
     split_idx = int(0.9 * len(dataset))
     train_data = dataset[:split_idx]
     valid_data = dataset[split_idx:]
     
-    print(f"Train size: {len(train_data)}, Validation size: {len(valid_data)}")
-    
     train_dataset = TextDataset(train_data, tokenizer, config.SEQ_LENGTH)
     valid_dataset = TextDataset(valid_data, tokenizer, config.SEQ_LENGTH)
     
-    # Set pin_memory=True and keep num_workers as specified
     train_loader = DataLoader(
         train_dataset,
         batch_size=config.BATCH_SIZE,
