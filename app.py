@@ -45,7 +45,7 @@ class Config:
     DROPOUT = 0.1
     GRADIENT_CLIP = 1.0
     NUM_WORKERS = 0  # Changed to 0 initially to debug
-    DATASET_SIZE = 20
+    DATASET_SIZE = 5000000
     #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 Medium Training Run; DATASET_SIZE = 8000000 or None  # Full dataset
     STREAM_BUFFER_SIZE = 10000  # Number of examples to buffer
     CACHE_DIR = "./dataset_cache"
@@ -199,6 +199,18 @@ def create_optimizer(model, config):
 def train_model(model, train_loader, valid_loader, config, tokenizer):
     print("Initializing wandb...")
     # wandb.init(project="language-model-training")
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="b6_large_language_model",
+
+        # track hyperparameters and run metadata
+        config={
+            "learning_rate": config.LEARNING_RATE,
+            "architecture": "Transformers",
+            "dataset": "c4",
+            "epochs": config.EPOCHS,
+        }
+    )
     accumulation_steps = config.GRADIENT_ACCUMULATION_STEPS
     print("Setting up training...")
     optimizer = create_optimizer(model, config)
@@ -244,10 +256,10 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
             avg_loss = train_loss / (batch_idx + 1)
             progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
             
-            # wandb.log({
-            #     "batch_loss": loss.item(),
-            #     "learning_rate": optimizer.param_groups[0]['lr']
-            # })
+            wandb.log({
+                "batch_loss": loss.item(),
+                "learning_rate": optimizer.param_groups[0]['lr']
+            })
         
         scheduler.step()
         avg_train_loss = train_loss / len(train_loader)
@@ -273,11 +285,11 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
         
         avg_valid_loss = valid_loss / len(valid_loader)
         
-        # wandb.log({
-        #     "epoch": epoch,
-        #     "train_loss": avg_train_loss,
-        #     "valid_loss": avg_valid_loss
-        # })
+        wandb.log({
+            "epoch": epoch,
+            "train_loss": avg_train_loss,
+            "valid_loss": avg_valid_loss
+        })
         
         print(f"\nEpoch {epoch+1}")
         print(f"Average training loss: {avg_train_loss:.4f}")
@@ -625,3 +637,4 @@ def run_model():
 if __name__ == "__main__":
     main()
     # run_model()
+    # 0a1758d09b1514f46e5d0444193f4413a33f4f1e
