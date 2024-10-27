@@ -18,6 +18,56 @@
 # 16GB GPU: Use the recommended values above
 # 24GB+ GPU: Can increase BATCH_SIZE to 32 or SEQ_LENGTH to 4096
 
+#The effective memory usage formula for transformer models is roughly:
+#Memory ∝ BATCH_SIZE × SEQ_LENGTH × EMBED_SIZE × NUM_LAYERS
+#Choose the configuration based on your priorities:
+#If you need longer context understanding: Use the long-context config
+#If you need better pattern recognition: Use the original optimized config with more layers
+#If you need faster training: Use the optimized config with smaller sequence length
+#Remember that the actual usable context length during inference can be different from training sequence length, 
+#and you can potentially do inference on longer sequences than what you trained on (though with potentially degraded quality).
+
+#Let's calculate the approximate memory requirements for this configuration:
+#Memory ∝ BATCH_SIZE × SEQ_LENGTH × EMBED_SIZE × NUM_LAYERS
+#Values:
+
+#BATCH_SIZE = 16
+#SEQ_LENGTH = 2048
+#EMBED_SIZE = 1024
+#NUM_LAYERS = 32
+
+#Let's calculate step by step:
+
+#Base Memory Calculation:
+#16 × 2048 × 1024 × 32 = 1,073,741,824 parameters
+#Converting to bytes:
+#Each parameter typically requires 4 bytes for forward pass (float32)
+#During training, we need:
+#4 bytes for parameters
+#4 bytes for gradients
+#8 bytes for optimizer states (using Adam)
+#Additional memory for activations and attention matrices
+
+#Detailed Memory Calculation:
+#Base memory: 1,073,741,824 × 4 = 4.29 GB (parameters)
+#Gradients: 4.29 GB (same size as parameters)
+#Optimizer states: 4.29 GB × 2 = 8.58 GB (Adam uses 2 states per parameter)
+#Attention matrices: 16 × 2048 × 2048 × 32 × 4 = 8.59 GB
+#Activations and temporary buffers: ≈ 4.29 GB
+#Total estimated memory requirement:
+#4.29 + 4.29 + 8.58 + 8.59 + 4.29 = 30.04 GB
+
+#Additional considerations:
+#PyTorch CUDA overhead: ~2-3 GB
+#Memory fragmentation: ~10-15% overhead
+#Gradient accumulation helps but you still need peak memory
+
+#Final estimate: ~35-40 GB of VRAM required
+#Recommendations for your setup:
+#If you have a 40GB A100 GPU:
+#This configuration should work, but it's cutting it close
+#You might experience occasional OOM errors during training spikes
+
 # Hyperparameters
 class Config:
     VOCAB_SIZE = 50257 # Matches GPT-2's vocabulary size which is ideal
@@ -33,7 +83,7 @@ class Config:
     DROPOUT = 0.1
     GRADIENT_CLIP = 1.0
     NUM_WORKERS = 0  # Changed to 0 initially to debug
-    DATASET_SIZE = 1000000
+    DATASET_SIZE = 100000
     #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 for Medium Training Run; DATASET_SIZE = 8000000 or None for Full dataset
     STREAM_BUFFER_SIZE = 10000  # Number of examples to buffer
     CACHE_DIR = "./dataset_cache"
