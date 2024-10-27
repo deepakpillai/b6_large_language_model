@@ -69,27 +69,60 @@
 #You might experience occasional OOM errors during training spikes
 
 # Hyperparameters
+# class Config:
+#     VOCAB_SIZE = 50257 # Matches GPT-2's vocabulary size which is ideal
+#     EMBED_SIZE = 1024  #1024 for better representation capacity
+#     NUM_HEADS = 16    # (embed_size/64 is a common ratio)
+#     NUM_LAYERS = 24   # for deeper network capacity
+#     HIDDEN_DIM = 4096 # 4096 (roughly 4x embed_size is common)
+#     BATCH_SIZE = 12   # Reduce from 32 to 16 (for 16gb ram) to handle memory constraints
+#     SEQ_LENGTH = 256  # Increase to 512 for better context handling
+#     EPOCHS = 5
+#     LEARNING_RATE = 1e-4
+#     WARMUP_STEPS = 2000 # Increase for more stable training
+#     DROPOUT = 0.1
+#     GRADIENT_CLIP = 1.0
+#     NUM_WORKERS = 0  # Changed to 0 initially to debug
+#     DATASET_SIZE = 100000
+#     #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 for Medium Training Run; DATASET_SIZE = 8000000 or None for Full dataset
+#     STREAM_BUFFER_SIZE = 10000  # Number of examples to buffer
+#     CACHE_DIR = "./dataset_cache"
+#     MAP_BATCH_SIZE = 1000
+    
+#     # Dataset specific parameters
+#     DATASET_NAME = "c4"  # Change this to use different datasets
+#     TEXT_COLUMN = "text"  # Change based on dataset
+#     GRADIENT_ACCUMULATION_STEPS = 8
+
+# Optimized Hyperparameters for RTX 3060
 class Config:
-    VOCAB_SIZE = 50257 # Matches GPT-2's vocabulary size which is ideal
-    EMBED_SIZE = 1024  #1024 for better representation capacity
-    NUM_HEADS = 16    # (embed_size/64 is a common ratio)
-    NUM_LAYERS = 24   # for deeper network capacity
-    HIDDEN_DIM = 4096 # 4096 (roughly 4x embed_size is common)
-    BATCH_SIZE = 12   # Reduce from 32 to 16 (for 16gb ram) to handle memory constraints
-    SEQ_LENGTH = 256  # Increase to 512 for better context handling
-    EPOCHS = 5
-    LEARNING_RATE = 1e-4
-    WARMUP_STEPS = 2000 # Increase for more stable training
+    # Model Architecture - Optimized for 12GB VRAM
+    VOCAB_SIZE = 50257  # Keep as is - matches GPT-2's vocabulary
+    EMBED_SIZE = 768    # Reduced from 1024 to save memory
+    NUM_HEADS = 12      # Reduced from 16 (embed_size/64 ratio)
+    NUM_LAYERS = 12     # Reduced from 24 for memory efficiency
+    HIDDEN_DIM = 3072   # Reduced from 4096 (4x embed_size)
+    
+    # Training Parameters
+    BATCH_SIZE = 4      # Reduced to prevent OOM
+    SEQ_LENGTH = 1024   # Reduced from 4096 for memory efficiency
+    EPOCHS = 3
+    LEARNING_RATE = 5e-5  # Slightly reduced for stability
+    WARMUP_STEPS = 1000   # Reduced from 2000
     DROPOUT = 0.1
     GRADIENT_CLIP = 1.0
-    NUM_WORKERS = 0  # Changed to 0 initially to debug
-    DATASET_SIZE = 100000
-    #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 for Medium Training Run; DATASET_SIZE = 8000000 or None for Full dataset
-    STREAM_BUFFER_SIZE = 10000  # Number of examples to buffer
-    CACHE_DIR = "./dataset_cache"
-    MAP_BATCH_SIZE = 1000
+    NUM_WORKERS = 2      # Balanced for i3 12100 (4 cores)
     
-    # Dataset specific parameters
-    DATASET_NAME = "c4"  # Change this to use different datasets
-    TEXT_COLUMN = "text"  # Change based on dataset
-    GRADIENT_ACCUMULATION_STEPS = 8
+    # Memory Management
+    GRADIENT_ACCUMULATION_STEPS = 16  # Increased to simulate larger batch size
+    MIXED_PRECISION = True  # Enable automatic mixed precision
+    
+    # Dataset Parameters
+    DATASET_SIZE = 100000  # Start with smaller dataset for testing
+    STREAM_BUFFER_SIZE = 1000000  # Reduced buffer size
+    CACHE_DIR = "./dataset_cache"
+    MAP_BATCH_SIZE = 100  # Reduced from 1000
+    
+    # Dataset Configuration
+    DATASET_NAME = "c4"
+    TEXT_COLUMN = "text"
