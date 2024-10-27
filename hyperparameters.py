@@ -33,7 +33,7 @@ class Config:
     DROPOUT = 0.1
     GRADIENT_CLIP = 1.0
     NUM_WORKERS = 0  # Changed to 0 initially to debug
-    DATASET_SIZE = 10
+    DATASET_SIZE = 1000000
     #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 for Medium Training Run; DATASET_SIZE = 8000000 or None for Full dataset
     STREAM_BUFFER_SIZE = 10000  # Number of examples to buffer
     CACHE_DIR = "./dataset_cache"

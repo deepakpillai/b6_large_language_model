@@ -76,5 +76,5 @@ def run_model():
         print("\nNo trained model found. Please train the model first.")
 
 if __name__ == "__main__":
-    # start_training()
-    run_model()
+    start_training()
+    # run_model()
