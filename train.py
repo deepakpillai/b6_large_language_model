@@ -46,7 +46,6 @@ class TextDataset(Dataset):
         }
 
 
-# Modified collate function
 def collate_fn(batch):
     input_ids = torch.stack([item['input_ids'] for item in batch])
     attention_mask = torch.stack([item['attention_mask'] for item in batch])
@@ -146,7 +145,6 @@ def prepare_dataloaders(config):
     }
     
     # Select dataset configuration
-    # dataset_config = DATASET_CONFIG['openwebtext2']  # Change this to use different datasets
     dataset_config = DATASET_CONFIG[config.DATASET_NAME]
 
     print(f"Loading {dataset_config['name']} dataset...")
@@ -208,30 +206,6 @@ def load_trained_model(model_path, config):
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
 
-def run_text_generation_only(model_path, prompt):
-    """
-    Function to run text generation without training.
-    Useful for generating text after the model has been trained.
-    """
-    config = hyperparameters.Config()
-    tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
-    tokenizer.pad_token = tokenizer.eos_token
-    
-    # Load the trained model
-    model = load_trained_model(model_path, config)
-    
-    # Generate text
-    generated_text = model.generate_text(
-        model,
-        prompt,
-        tokenizer,
-        config,
-        max_length=150,
-        temperature=0.7,
-        top_k=50
-    )
-    
-    return generated_text
 
 def train_model(model, train_loader, valid_loader, config, tokenizer):
     print("Initializing wandb...")

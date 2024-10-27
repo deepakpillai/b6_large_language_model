@@ -1,13 +1,13 @@
 # For different GPU memory sizes:
 
 # VOCAB_SIZE = 50257  # Keep as is - this matches GPT-2's vocabulary size which is ideal
-# EMBED_SIZE = 1024   # Increase to 1024 for better representation capacity
+# EMBED_SIZE = 1024   # Increase to 2048 for better representation capacity
 # NUM_HEADS = 16      # Increase to 16 (embed_size/64 is a common ratio)
-# NUM_LAYERS = 24     # Increase to 24 for deeper network capacity
-# HIDDEN_DIM = 4096   # Increase to 4096 (roughly 4x embed_size is common)
+# NUM_LAYERS = 24     # Increase to 32 for deeper network capacity
+# HIDDEN_DIM = 4096   # Increase to 8192 (roughly 4x embed_size is common)
 # BATCH_SIZE = 16     # Reduce from 32 to 16 to handle memory constraints
-# SEQ_LENGTH = 512    # Increase to 512 for better context handling
-# EPOCHS = 5          # Increase to 5 for better convergence
+# SEQ_LENGTH = 2048    # Increase to 4096 for better context handling
+# EPOCHS = 3          # Increase to 5 for better convergence
 # LEARNING_RATE = 3e-4  # Slightly increase for faster initial learning
 # WARMUP_STEPS = 2000   # Increase for more stable training
 # DROPOUT = 0.1        # Keep as is - good balance
@@ -16,7 +16,7 @@
 
 # 8GB GPU: Use BATCH_SIZE=8, SEQ_LENGTH=256
 # 16GB GPU: Use the recommended values above
-# 24GB+ GPU: Can increase BATCH_SIZE to 32 or SEQ_LENGTH to 1024
+# 24GB+ GPU: Can increase BATCH_SIZE to 32 or SEQ_LENGTH to 4096
 
 # Hyperparameters
 class Config:
@@ -33,8 +33,8 @@ class Config:
     DROPOUT = 0.1
     GRADIENT_CLIP = 1.0
     NUM_WORKERS = 0  # Changed to 0 initially to debug
-    DATASET_SIZE = 20 #5000000
-    #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 Medium Training Run; DATASET_SIZE = 8000000 or None  # Full dataset
+    DATASET_SIZE = 10
+    #DATASET_SIZE = 1000  # Very quick runs, basic testing; #DATASET_SIZE = 1000000 for Medium Training Run; DATASET_SIZE = 8000000 or None for Full dataset
     STREAM_BUFFER_SIZE = 10000  # Number of examples to buffer
     CACHE_DIR = "./dataset_cache"
     MAP_BATCH_SIZE = 1000
