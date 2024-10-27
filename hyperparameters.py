@@ -94,7 +94,7 @@
 #     TEXT_COLUMN = "text"  # Change based on dataset
 #     GRADIENT_ACCUMULATION_STEPS = 8
 
-# Optimized Hyperparameters for RTX 3060
+# Optimized Hyperparameters for i3 12100 & RTX 3060
 class Config:
     # Model Architecture - Optimized for 12GB VRAM
     VOCAB_SIZE = 50257  # Keep as is - matches GPT-2's vocabulary

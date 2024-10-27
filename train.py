@@ -340,7 +340,7 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
         steps_per_epoch=len(train_loader),
         pct_start=0.05
     )
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = torch.amp.GradScaler(device='cuda')
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
     
     # Memory management
@@ -363,7 +363,7 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
             attention_mask = attention_mask.to(device, non_blocking=True)
             
             # Automatic mixed precision training
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast(device_type='cuda'):
                 outputs = model(input_ids, attention_mask)
                 shift_logits = outputs[..., :-1, :].contiguous()
                 shift_labels = input_ids[..., 1:].contiguous()
@@ -409,7 +409,7 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
                 input_ids = input_ids.to(device, non_blocking=True)
                 attention_mask = attention_mask.to(device, non_blocking=True)
                 
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast(device_type='cuda'):
                     outputs = model(input_ids, attention_mask)
                     shift_logits = outputs[..., :-1, :].contiguous()
                     shift_labels = input_ids[..., 1:].contiguous()
