@@ -1,4 +1,4 @@
-# B6 Language Model 🤖
+# B6 Large Language Model (LLM) 🤖
 
 B6 is a next-gen, transformer-based language model built to bring high scalability and flexibility to NLP tasks, powered by PyTorch. Designed for peak performance, B6 merges modern architecture with cutting-edge training enhancements, making it a powerful tool for both research and practical applications in natural language processing.
 
