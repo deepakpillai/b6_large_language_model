@@ -12,7 +12,15 @@ def generate_text(model, prompt, tokenizer, config, max_length=100, temperature=
     
     for _ in range(max_length):
         with torch.no_grad():
-            outputs = model(input_ids, attention_mask)
+            # outputs = model(input_ids, attention_mask)
+            try:
+                outputs = model(input_ids, attention_mask)
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    torch.cuda.empty_cache()
+                    # Implement proper recovery strategy
+                    raise RuntimeError("GPU OOM - consider reducing batch size")
+                raise e
             next_token_logits = outputs[:, -1, :] / temperature
             
             # Top-k sampling
