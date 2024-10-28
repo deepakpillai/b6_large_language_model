@@ -81,11 +81,12 @@ class Config:
     NUM_HEADS: int = 0
     NUM_LAYERS: int = 0
     HIDDEN_DIM: int = 0
-    MAX_POSITION_EMBEDDINGS: int = 0
+    MAX_POSITION_EMBEDDINGS: int = 32000 
+
     
     # Training Parameters
     BATCH_SIZE: int = 0
-    SEQ_LENGTH: int = 0
+    SEQ_LENGTH: int = 32000
     EPOCHS: int = 0
     LEARNING_RATE: float = 3e-4
     WARMUP_STEPS: int = 0
@@ -182,11 +183,11 @@ class RTX3060Values:
     NUM_HEADS: int = 12
     NUM_LAYERS: int = 12
     HIDDEN_DIM: int = 3072
-    MAX_POSITION_EMBEDDINGS: int = 2048  # Maximum sequence length for positional embeddings
+    MAX_POSITION_EMBEDDINGS: int = 32000
 
     # Training Parameters
     BATCH_SIZE: int = 4
-    SEQ_LENGTH: int = 1024
+    SEQ_LENGTH: int = 32000
     EPOCHS: int = 3
     LEARNING_RATE: float = 3e-4
     WARMUP_STEPS: int = 750
@@ -208,7 +209,7 @@ class RTX3060Values:
     WARMUP_INIT_LR: float = 3e-6  # Start at 1% of max LR
     
     # Memory Management
-    GRADIENT_ACCUMULATION_STEPS: int = 16
+    GRADIENT_ACCUMULATION_STEPS: int = 32
     MIXED_PRECISION: bool = True
     USE_FLASH_ATTENTION: bool = True
     GRADIENT_CHECKPOINTING: bool = True    # Enable gradient checkpointing
@@ -262,11 +263,11 @@ class A100Values:
     NUM_HEADS: int = 16      # Number of attention heads
     NUM_LAYERS: int = 24     # Number of transformer layers
     HIDDEN_DIM: int = 4096   # FFN hidden dimension
-    MAX_POSITION_EMBEDDINGS: int = 2048  # Maximum sequence length for positional embeddings
+    MAX_POSITION_EMBEDDINGS: int = 32000
     
     # Training Parameters
     BATCH_SIZE: int = 16
-    SEQ_LENGTH: int = 2048
+    SEQ_LENGTH: int = 32000
     EPOCHS: int = 5
     LEARNING_RATE: float = 3e-4
     WARMUP_STEPS: int = 1000
@@ -288,7 +289,7 @@ class A100Values:
     WARMUP_INIT_LR: float = 3e-6
 
     # Memory Management
-    GRADIENT_ACCUMULATION_STEPS: int = 4
+    GRADIENT_ACCUMULATION_STEPS: int = 32
     MIXED_PRECISION: bool = True
     USE_FLASH_ATTENTION: bool = True
     GRADIENT_CHECKPOINTING: bool = True    # Enable gradient checkpointing
