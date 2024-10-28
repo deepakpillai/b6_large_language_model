@@ -29,7 +29,9 @@ def start_training():
     # Initialize model
     print("Initializing model...")
     model = modelObj.ImprovedTransformerModel(config).to(device)
-    
+    # Enable gradient checkpointing
+    model.enable_gradient_checkpointing()
+
     # Print model summary
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
