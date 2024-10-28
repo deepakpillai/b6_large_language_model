@@ -56,13 +56,6 @@ class Config:
 python app.py
 ```
 
-### GPU Memory Requirements
-
-The model can be configured for different GPU memory sizes:
-- 8GB GPU: Use `BATCH_SIZE=8`, `SEQ_LENGTH=256`
-- 16GB GPU: Use default values
-- 24GB+ GPU: Can increase `BATCH_SIZE` to 32 or `SEQ_LENGTH` to 4096
-
 ## 💡 Model Architecture
 
 B6 implements a transformer architecture with several modern improvements:
