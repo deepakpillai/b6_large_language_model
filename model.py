@@ -14,93 +14,151 @@ import math
 from optimizer import Lion
 from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
 from flash_attn.bert_padding import unpad_input, pad_input
-from einops import rearrange
+from einops import rearrange, repeat
 import torch.utils.checkpoint as checkpoint
+from typing import Optional, Tuple
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class FlashMultiHeadAttention(nn.Module):
+    """
+    Implements Flash Attention v2 with better memory efficiency and speed.
+    """
     def __init__(self, config):
         super().__init__()
         self.num_attention_heads = config.NUM_HEADS
         self.attention_head_size = int(config.EMBED_SIZE / config.NUM_HEADS)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
         
-        self.layer_norm = LayerNorm(config.EMBED_SIZE)
-        self.qkv = nn.Linear(config.EMBED_SIZE, 3 * self.all_head_size, bias=False)
-        self.dense = nn.Linear(config.EMBED_SIZE, config.EMBED_SIZE)
+        # Separate projections for Q, K, V
+        self.q_proj = nn.Linear(config.EMBED_SIZE, self.all_head_size, bias=False)
+        self.k_proj = nn.Linear(config.EMBED_SIZE, self.all_head_size, bias=False)
+        self.v_proj = nn.Linear(config.EMBED_SIZE, self.all_head_size, bias=False)
+        
         self.dropout = nn.Dropout(config.DROPOUT)
+        self.layer_norm = LayerNorm(config.EMBED_SIZE)
+        self.out_proj = nn.Linear(config.EMBED_SIZE, config.EMBED_SIZE)
         
+        # Scaling factor for better numerical stability
         self.scale = math.sqrt(self.attention_head_size)
+        
+        # Memory efficient attention settings
+        self.head_dim = config.EMBED_SIZE // config.NUM_HEADS
+        assert self.head_dim * config.NUM_HEADS == config.EMBED_SIZE, "embed_dim must be divisible by num_heads"
 
-    def forward(self, hidden_states, attention_mask=None):
-        normalized_hidden_states = self.layer_norm(hidden_states)
-        batch_size, seq_length, _ = normalized_hidden_states.size()
+    def _reshape_for_flash_attention(self, x: torch.Tensor) -> torch.Tensor:
+        """Reshape input tensor for flash attention."""
+        batch_size, seq_length, _ = x.size()
+        x = rearrange(x, 'b s (h d) -> b s h d', h=self.num_attention_heads)
+        return x
+
+    def forward(self, 
+                hidden_states: torch.Tensor,
+                attention_mask: Optional[torch.Tensor] = None,
+                causal: bool = True) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """
+        Forward pass with Flash Attention v2 optimizations.
         
-        qkv = self.qkv(normalized_hidden_states)
-        qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, 
-                       h=self.num_attention_heads)
-        
-        def attention_forward(qkv, attention_mask):
-            if attention_mask is not None:
-                attention_mask = attention_mask.bool()
-                qkv, indices, cu_seqlens, max_seqlen = unpad_input(qkv, attention_mask)
-                context_layer = flash_attn_qkvpacked_func(
-                    qkv, 
-                    cu_seqlens=cu_seqlens, 
-                    max_seqlen=max_seqlen, 
-                    dropout_p=self.dropout.p if self.training else 0.0,
-                    softmax_scale=self.scale
-                )
-                context_layer = pad_input(context_layer, indices, batch_size, seq_length)
-            else:
-                context_layer = flash_attn_qkvpacked_func(
-                    qkv,
-                    dropout_p=self.dropout.p if self.training else 0.0,
-                    softmax_scale=self.scale
-                )
-            return context_layer
-        
-        if self.training:
-            context_layer = checkpoint.checkpoint(attention_forward, qkv, attention_mask)
-        else:
-            context_layer = attention_forward(qkv, attention_mask)
+        Args:
+            hidden_states: Input tensor of shape (batch_size, seq_length, embed_dim)
+            attention_mask: Optional mask tensor of shape (batch_size, seq_length)
+            causal: Whether to apply causal masking
             
-        context_layer = rearrange(context_layer, 'b s h d -> b s (h d)')
-        attention_output = self.dense(context_layer)
-        attention_output = self.dropout(attention_output)
+        Returns:
+            output: Transformed tensor of shape (batch_size, seq_length, embed_dim)
+            attention_weights: Optional attention weights for visualization
+        """
+        batch_size, seq_length, _ = hidden_states.size()
         
-        return attention_output + hidden_states
+        # Apply layer normalization first (pre-norm)
+        normed_hidden_states = self.layer_norm(hidden_states)
+        
+        # Generate Q, K, V projections
+        def qkv_forward(hidden_states):
+            q = self._reshape_for_flash_attention(self.q_proj(hidden_states))
+            k = self._reshape_for_flash_attention(self.k_proj(hidden_states))
+            v = self._reshape_for_flash_attention(self.v_proj(hidden_states))
+            return q, k, v
+        
+        # Apply checkpointing for memory efficiency during training
+        if self.training:
+            q, k, v = checkpoint.checkpoint(qkv_forward, normed_hidden_states)
+        else:
+            q, k, v = qkv_forward(normed_hidden_states)
+        
+        # Pack QKV for flash attention
+        qkv = torch.stack([q, k, v], dim=2)  # [batch_size, seq_length, 3, num_heads, head_dim]
+        
+        # Handle attention mask
+        if attention_mask is not None:
+            attention_mask = attention_mask.bool()
+            
+            # Unpad input if using attention mask
+            qkv_unpad, indices, cu_seqlens, max_seqlen = unpad_input(qkv, attention_mask)
+            
+            # Apply flash attention
+            context_layer = flash_attn_qkvpacked_func(
+                qkv_unpad,
+                cu_seqlens=cu_seqlens,
+                max_seqlen=max_seqlen,
+                dropout_p=self.dropout.p if self.training else 0.0,
+                softmax_scale=self.scale,
+                causal=causal
+            )
+            
+            # Pad output back
+            context_layer = pad_input(context_layer, indices, batch_size, seq_length)
+        else:
+            # Direct flash attention if no mask
+            context_layer = flash_attn_qkvpacked_func(
+                qkv,
+                dropout_p=self.dropout.p if self.training else 0.0,
+                softmax_scale=self.scale,
+                causal=causal
+            )
+        
+        # Reshape and apply output projection
+        context_layer = rearrange(context_layer, 'b s h d -> b s (h d)')
+        output = self.out_proj(context_layer)
+        output = self.dropout(output)
+        
+        return output
 
 
 class FeedForward(nn.Module):
+    """
+    Enhanced feed-forward network with better memory efficiency.
+    """
     def __init__(self, config):
         super().__init__()
         self.layer_norm = LayerNorm(config.EMBED_SIZE)
-        self.dense1 = nn.Linear(config.EMBED_SIZE, config.HIDDEN_DIM)
-        self.intermediate_act_fn = nn.GELU()
-        self.dense2 = nn.Linear(config.HIDDEN_DIM, config.EMBED_SIZE)
+        
+        # Use intermediate size multiplier for better capacity
+        self.intermediate_size = config.HIDDEN_DIM
+        
+        self.fc1 = nn.Linear(config.EMBED_SIZE, self.intermediate_size)
+        self.fc2 = nn.Linear(self.intermediate_size, config.EMBED_SIZE)
         self.dropout = nn.Dropout(config.DROPOUT)
+        self.activation = nn.GELU()
 
     def forward(self, hidden_states):
-        def ffn_forward(hidden_states):
-            normalized_hidden_states = self.layer_norm(hidden_states)
-            hidden_states_inner = self.dense1(normalized_hidden_states)
-            hidden_states_inner = self.intermediate_act_fn(hidden_states_inner)
-            hidden_states_inner = self.dense2(hidden_states_inner)
-            hidden_states_inner = self.dropout(hidden_states_inner)
-            return hidden_states_inner
+        def ff_forward(x):
+            x = self.layer_norm(x)
+            x = self.fc1(x)
+            x = self.activation(x)
+            x = self.fc2(x)
+            return self.dropout(x)
         
         if self.training:
-            hidden_states_inner = checkpoint.checkpoint(ffn_forward, hidden_states)
-        else:
-            hidden_states_inner = ffn_forward(hidden_states)
-            
-        return hidden_states_inner + hidden_states
+            return checkpoint.checkpoint(ff_forward, hidden_states)
+        return ff_forward(hidden_states)
 
 
 class FlashTransformerLayer(nn.Module):
+    """
+    Enhanced transformer layer with Flash Attention v2.
+    """
     def __init__(self, config):
         super().__init__()
         self.attention = FlashMultiHeadAttention(config)
@@ -108,14 +166,15 @@ class FlashTransformerLayer(nn.Module):
         self.use_checkpoint = True
 
     def forward(self, x, attention_mask=None):
-        def layer_forward(x, attention_mask):
-            x = self.attention(x, attention_mask)
-            x = self.ffn(x)
-            return x
-            
-        if self.training and self.use_checkpoint:
-            return checkpoint.checkpoint(layer_forward, x, attention_mask)
-        return layer_forward(x, attention_mask)
+        # Residual connection for attention
+        attn_output = self.attention(x, attention_mask)
+        x = x + attn_output
+        
+        # Residual connection for feed-forward
+        ff_output = self.ffn(x)
+        x = x + ff_output
+
+        return x
 
 class ImprovedTransformerModel(nn.Module):
     def __init__(self, config):
