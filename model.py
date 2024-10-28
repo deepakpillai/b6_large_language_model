@@ -10,50 +10,72 @@ import torch.nn.functional as F
 import wandb  # For experiment tracking
 from torch.nn import LayerNorm
 import hyperparameters
+import math
+from optimizer import Lion
+from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
+from flash_attn.bert_padding import unpad_input, pad_input
+from einops import rearrange
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class MultiHeadAttention(nn.Module):
+class FlashMultiHeadAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.num_attention_heads = config.NUM_HEADS
         self.attention_head_size = int(config.EMBED_SIZE / config.NUM_HEADS)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
-
-        self.query = nn.Linear(config.EMBED_SIZE, self.all_head_size)
-        self.key = nn.Linear(config.EMBED_SIZE, self.all_head_size)
-        self.value = nn.Linear(config.EMBED_SIZE, self.all_head_size)
-        self.dropout = nn.Dropout(config.DROPOUT)
+        
+        # Single projection matrix for Q, K, V
+        self.qkv = nn.Linear(config.EMBED_SIZE, 3 * self.all_head_size, bias=False)
         self.dense = nn.Linear(config.EMBED_SIZE, config.EMBED_SIZE)
+        self.dropout = nn.Dropout(config.DROPOUT)
         self.layer_norm = LayerNorm(config.EMBED_SIZE)
-
-    def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
+        
+        # Scaling factor for attention
+        self.scale = math.sqrt(self.attention_head_size)
 
     def forward(self, hidden_states, attention_mask=None):
-        query_layer = self.transpose_for_scores(self.query(hidden_states))
-        key_layer = self.transpose_for_scores(self.key(hidden_states))
-        value_layer = self.transpose_for_scores(self.value(hidden_states))
-
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        batch_size, seq_length, _ = hidden_states.size()
         
+        # Project to Q, K, V in one go
+        qkv = self.qkv(hidden_states)
+        
+        # Reshape qkv for Flash Attention
+        qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, 
+                       h=self.num_attention_heads)
+        
+        # Handle attention mask for Flash Attention
         if attention_mask is not None:
-            attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
-            attention_mask = (1.0 - attention_mask) * -10000.0
-            attention_scores = attention_scores + attention_mask
-
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
-        attention_probs = self.dropout(attention_probs)
-
-        context_layer = torch.matmul(attention_probs, value_layer)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+            # Convert mask to boolean
+            attention_mask = attention_mask.bool()
+            
+            # Unpad input and mask for Flash Attention
+            qkv, indices, cu_seqlens, max_seqlen = unpad_input(qkv, attention_mask)
+            
+            # Apply Flash Attention
+            context_layer = flash_attn_qkvpacked_func(
+                qkv, 
+                cu_seqlens=cu_seqlens, 
+                max_seqlen=max_seqlen, 
+                dropout_p=self.dropout.p if self.training else 0.0,
+                softmax_scale=self.scale
+            )
+            
+            # Pad output back
+            context_layer = pad_input(context_layer, indices, batch_size, seq_length)
+        else:
+            # If no mask, reshape and apply Flash Attention directly
+            context_layer = flash_attn_qkvpacked_func(
+                qkv,
+                dropout_p=self.dropout.p if self.training else 0.0,
+                softmax_scale=self.scale
+            )
         
+        # Reshape output
+        context_layer = rearrange(context_layer, 'b s h d -> b s (h d)')
+        
+        # Project back to embedding dimension
         attention_output = self.dense(context_layer)
         attention_output = self.dropout(attention_output)
         attention_output = self.layer_norm(attention_output + hidden_states)
@@ -77,10 +99,10 @@ class FeedForward(nn.Module):
         hidden_states = self.layer_norm(hidden_states + hidden_states_inner)
         return hidden_states
 
-class TransformerLayer(nn.Module):
+class FlashTransformerLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.attention = MultiHeadAttention(config)
+        self.attention = FlashMultiHeadAttention(config)
         self.ffn = FeedForward(config)
 
     def forward(self, x, attention_mask=None):
@@ -95,8 +117,9 @@ class ImprovedTransformerModel(nn.Module):
         self.position_embedding = nn.Embedding(config.SEQ_LENGTH, config.EMBED_SIZE)
         self.dropout = nn.Dropout(config.DROPOUT)
         
+        # Use Flash Attention Transformer layers
         self.layers = nn.ModuleList([
-            TransformerLayer(config) for _ in range(config.NUM_LAYERS)
+            FlashTransformerLayer(config) for _ in range(config.NUM_LAYERS)
         ])
         
         self.layer_norm = LayerNorm(config.EMBED_SIZE)
@@ -134,13 +157,16 @@ class ImprovedTransformerModel(nn.Module):
         return logits
 
 def create_optimizer(model, config):
-    # Implementing weight decay fix
+    """
+    Creates and returns a Lion optimizer with weight decay fix.
+    """
+    # Implementing weight decay fix (similar to AdamW)
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {
             'params': [p for n, p in model.named_parameters() 
                       if not any(nd in n for nd in no_decay)],
-            'weight_decay': 0.01
+            'weight_decay': 0.1
         },
         {
             'params': [p for n, p in model.named_parameters() 
@@ -148,5 +174,12 @@ def create_optimizer(model, config):
             'weight_decay': 0.0
         }
     ]
-    optimizer = optim.AdamW(optimizer_grouped_parameters, lr=config.LEARNING_RATE)
+    
+    optimizer = Lion(
+        optimizer_grouped_parameters,
+        lr=config.LEARNING_RATE,
+        beta1=0.95,
+        beta2=0.98,
+        weight_decay=0.1
+    )
     return optimizer

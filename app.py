@@ -17,7 +17,8 @@ def start_training():
     np.random.seed(42)
     
     # Initialize config
-    config = hyperparameters.Config()
+    # For RTX 3060 setup
+    config = hyperparameters.setup_config(hyperparameters.Config(), "rtx3060")
     
     print(f"Using device: {device}")
     
@@ -41,7 +42,7 @@ def start_training():
 
 def run_model():
     # Initialize config
-    config = hyperparameters.Config()
+    config = hyperparameters.setup_config(hyperparameters.Config(), "rtx3060")
     tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = 'right'
