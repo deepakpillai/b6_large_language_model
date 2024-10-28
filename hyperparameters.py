@@ -134,6 +134,39 @@ class Config:
     SAVE_INTERVAL: int = 0
     EVAL_INTERVAL: int = 0
 
+    # Choose your dataset configuration
+    DATASET_CONFIG = {
+        'openwebtext2': {
+            'name': "the_pile_openwebtext2",
+            'text_column': 'text',
+        },
+        'redpajama': {
+            'name': "togethercomputer/RedPajama-Data-1T",
+            'text_column': 'text',
+        },
+        'oscar': {
+            'name': "oscar-corpus/OSCAR-2301",
+            'text_column': 'text',
+        },
+        'stack': {
+            'name': "bigcode/the-stack",
+            'text_column': 'content',
+        },
+        'books3': {
+            'name': "the_pile_books3",
+            'text_column': 'text',
+        },
+        'openwebtext': {
+            'name': "openwebtext",
+            'text_column': 'text'
+        },
+        'c4': {
+            'name': "allenai/c4",
+            'text_column': 'text',
+        }
+    }
+    
+
 
 @dataclass
 class RTX3060Values:
@@ -284,7 +317,7 @@ class A100Values:
         assert self.HEAD_DIM % 8 == 0, \
             "Head dimension must be divisible by 8 for optimal Flash Attention performance"
 
-def setup_config(config_class, hardware_type: str = "rtx3060"):
+def setup_config(config_class, hardware_type: str = "auto"):
     """
     Sets up the Config class with values based on hardware type.
     
@@ -295,6 +328,10 @@ def setup_config(config_class, hardware_type: str = "rtx3060"):
     Returns:
         Modified Config class with appropriate values
     """
+
+    if hardware_type == "auto":
+        hardware_type = detect_hardware()
+
     # Select values based on hardware
     values = RTX3060Values() if hardware_type.lower() == "rtx3060" else A100Values()
     
@@ -316,6 +353,8 @@ def setup_config(config_class, hardware_type: str = "rtx3060"):
     if total_memory_required > available_memory:
         print("\nWARNING: Estimated memory requirement exceeds available GPU memory!")
         print("Consider adjusting batch size or model parameters.")
+    
+    validate_config(config_class)
     
     return config_class
 
@@ -352,3 +391,33 @@ def get_available_gpu_memory() -> float:
         prop = torch.cuda.get_device_properties(device)
         return prop.total_memory / (1024**3)
     return 0.0
+
+def validate_config(config):
+    """Validates configuration parameters."""
+    required_attrs = [
+        'VOCAB_SIZE', 'EMBED_SIZE', 'NUM_HEADS', 'NUM_LAYERS',
+        'HIDDEN_DIM', 'MAX_POSITION_EMBEDDINGS', 'BATCH_SIZE',
+        'SEQ_LENGTH', 'EPOCHS', 'LEARNING_RATE'
+    ]
+    
+    for attr in required_attrs:
+        if not hasattr(config, attr):
+            raise ValueError(f"Missing required config attribute: {attr}")
+            
+    # Validate numeric ranges
+    assert config.EMBED_SIZE > 0, "EMBED_SIZE must be positive"
+    assert config.NUM_HEADS > 0, "NUM_HEADS must be positive"
+    assert config.BATCH_SIZE > 0, "BATCH_SIZE must be positive"
+    assert 0.0 <= config.DROPOUT <= 1.0, "DROPOUT must be between 0 and 1"
+    
+    return True
+
+def detect_hardware():
+    """Automatically detect hardware configuration."""
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name()
+        if "3060" in gpu_name:
+            return "rtx3060"
+        elif "A100" in gpu_name:
+            return "a100"
+    return "cpu"

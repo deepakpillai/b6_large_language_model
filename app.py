@@ -1,4 +1,3 @@
-import train
 import torch
 import numpy as np
 from transformers import GPT2TokenizerFast
@@ -6,6 +5,8 @@ import os
 import hyperparameters
 import model as modelObj
 import inferencing
+import trainingmanager
+import datamanager
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -18,13 +19,13 @@ def start_training():
     
     # Initialize config
     # For RTX 3060 setup
-    config = hyperparameters.setup_config(hyperparameters.Config(), "rtx3060")
+    config = hyperparameters.setup_config(hyperparameters.Config(), "auto")
     
     print(f"Using device: {device}")
     
     # Load data
     print("Preparing dataloaders...")
-    train_loader, valid_loader, tokenizer = train.prepare_dataloaders(config)
+    train_loader, valid_loader, tokenizer = datamanager.prepare_dataloaders(config)
     
     # Initialize model
     print("Initializing model...")
@@ -40,7 +41,7 @@ def start_training():
     
     # Train model
     print("Starting training...")
-    train.train_model(model, train_loader, valid_loader, config, tokenizer)
+    trainingmanager.train_model(model, train_loader, valid_loader, config, tokenizer)
 
 def run_model():
     # Initialize config
@@ -51,7 +52,7 @@ def run_model():
      # Load the best model for text generation
     best_model_path = 'best_model.pt'
     if os.path.exists(best_model_path):
-        model = train.load_trained_model(best_model_path, config)
+        model = datamanager.load_trained_model(best_model_path, config)
         
         # Generate text examples
         test_prompts = [

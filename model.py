@@ -81,6 +81,9 @@ class FlashMultiHeadAttention(nn.Module):
     ) -> torch.Tensor:
         batch_size, seq_length, _ = hidden_states.size()
         
+        assert seq_length <= self.config.MAX_POSITION_EMBEDDINGS, \
+            f"Sequence length {seq_length} exceeds maximum position embeddings"
+        
         # Apply pre-norm if configured
         if self.config.PRE_NORM:
             hidden_states = self.layer_norm(hidden_states)
