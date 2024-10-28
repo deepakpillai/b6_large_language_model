@@ -4,19 +4,20 @@ B6 is a next-gen, transformer-based language model built to bring high scalabili
 
 ## ✨ Key Features
 
-- **Scalable Architecture**
+- **Efficient & Scalable Architecture**
   - Configurable model dimensions (embedding size, number of heads, layers)
+  - Flash Attention implementation for optimized memory usage and speed
   - Memory-efficient implementation with support for different GPU sizes
+  - Gradient checkpointing for reduced memory footprint
   - Gradient accumulation for handling larger batch sizes
   - Mixed-precision training with automatic mixed precision (AMP)
 
 - **Advanced Training Components**
-  - Multi-head attention mechanism with optional attention masking
-  - Position embeddings for sequence understanding
-  - Layer normalization and residual connections
-  - GELU activation functions
-  - AdamW optimizer with weight decay fix
-  - Cosine learning rate scheduling
+  - Lion optimizer with weight decay fix
+  - OneCycleLR learning rate scheduler
+  - Gradient accumulation
+  - Automatic mixed precision training
+  - Memory-efficient streaming dataset loading
 
 - **Optimized Data Pipeline**
   - Efficient data streaming implementation
@@ -26,7 +27,6 @@ B6 is a next-gen, transformer-based language model built to bring high scalabili
 
 - **Modern Training Features**
   - Wandb integration for experiment tracking
-  - Checkpoint saving and loading
   - Validation-based model selection
   - Gradient clipping for stability
   - Dropout for regularization
@@ -36,7 +36,7 @@ B6 is a next-gen, transformer-based language model built to bring high scalabili
 ### Prerequisites
 
 ```bash
-pip install torch transformers datasets wandb tqdm numpy zstandard
+pip install torch ninja packaging transformers datasets wandb tqdm numpy zstandard flash-attn --no-build-isolation
 ```
 
 ### Training the Model
@@ -67,14 +67,13 @@ The model can be configured for different GPU memory sizes:
 
 B6 implements a transformer architecture with several modern improvements:
 
-- **Multi-head Self-attention**: Allows the model to attend to different parts of the input sequence
 - **Feed-forward Networks**: Processes the attention output through position-wise fully connected layers
 - **Layer Normalization**: Stabilizes training by normalizing activations
 - **Residual Connections**: Helps with gradient flow in deep networks
 
 ## 📊 Training Features
 
-- **Gradient Accumulation**: Enables training with larger effective batch sizes
+- **Gradient checkpointing**: Enables Gradient checkpointing for reduced memory footprint
 - **Mixed Precision Training**: Reduces memory usage and speeds up training
 - **Learning Rate Scheduling**: Implements cosine annealing for better convergence
 - **Validation-based Checkpointing**: Saves the best model based on validation loss
