@@ -1,35 +1,41 @@
-# B6 Large Language Model (LLM) 🤖
+# B6 Large Language Model (LLM) 🚀
 
-B6 is a next-gen, transformer-based language model built to bring high scalability and flexibility to NLP tasks, powered by PyTorch. Designed for peak performance, B6 merges modern architecture with cutting-edge training enhancements, making it a powerful tool for both research and practical applications in natural language processing.
+B6 is a high-performance language model implementation that pushes the boundaries of efficient transformer architecture. Built with PyTorch and optimized for modern GPUs, it combines cutting-edge techniques like Flash Attention, Rotary Position Embeddings (RoPE), and advanced memory management to deliver a powerful, scalable training framework for language models.
 
-## ✨ Key Features
+## ⚡ Core Features
 
-- **Efficient & Scalable Architecture**
-  - Configurable model dimensions (embedding size, number of heads, layers)
-  - Flash Attention implementation for optimized memory usage and speed
-  - Memory-efficient implementation with support for different GPU sizes
-  - Gradient checkpointing for reduced memory footprint
-  - Gradient accumulation for handling larger batch sizes
-  - Mixed-precision training with automatic mixed precision (AMP)
+### Advanced Architecture
+- **Flash Attention Integration** with version-specific optimizations
+- **Rotary Position Embeddings (RoPE)** for enhanced positional understanding
+- **Flexible Normalization** with support for both Pre-LN and Post-LN architectures
+- **Optimized Multi-Head Attention** with configurable bias and scaling
+- **Adaptive Architecture** that scales from RTX 3060 to A100 configurations
 
-- **Advanced Training Components**
-  - Lion optimizer with weight decay fix
-  - OneCycleLR learning rate scheduler
-  - Gradient accumulation
-  - Automatic mixed precision training
-  - Memory-efficient streaming dataset loading
+### Memory Optimization Suite
+- **Dynamic Memory Management** with automatic cleanup and monitoring
+- **Smart Gradient Checkpointing** for optimal memory-performance trade-off
+- **Gradient Accumulation** with configurable steps
+- **Mixed Precision Training** using PyTorch AMP
+- **Adaptive Batch Sizing** with automatic OOM recovery
 
-- **Optimized Data Pipeline**
-  - Efficient data streaming implementation
-  - Support for multiple datasets (C4, OpenWebText, RedPajama, OSCAR, etc.)
-  - Custom data collation and preprocessing
-  - Configurable sequence lengths and batch sizes
+### Advanced Training Components
+- **Lion Optimizer** - Evolutionary optimization algorithm with proper weight decay handling
+- **Optimized LLM Scheduler** featuring:
+  - Linear warmup with cosine decay
+  - Configurable minimum LR ratio
+  - Dynamic warmup scheduling
+- **Intelligent Checkpointing** with validation-based model selection
 
-- **Modern Training Features**
-  - Wandb integration for experiment tracking
-  - Validation-based model selection
-  - Gradient clipping for stability
-  - Dropout for regularization
+### Robust Data Pipeline
+- **Streaming Dataset Support** for efficient memory usage
+- **Multiple Dataset Compatibility**:
+  - C4
+  - OpenWebText2
+  - RedPajama
+  - OSCAR
+  - The Stack
+  - Books3
+- **Efficient Data Loading** with prefetching and persistent workers
 
 ## 🚀 Getting Started
 
@@ -58,11 +64,93 @@ python app.py
 
 ## 💡 Model Architecture
 
-B6 implements a transformer architecture with several modern improvements:
+The B6 model implements a state-of-the-art transformer architecture with several modern optimizations:
 
-- **Feed-forward Networks**: Processes the attention output through position-wise fully connected layers
-- **Layer Normalization**: Stabilizes training by normalizing activations
-- **Residual Connections**: Helps with gradient flow in deep networks
+### Core Components
+
+- **Flash Attention Mechanism**: Implements an optimized attention mechanism using the Flash Attention algorithm, providing significant memory and computational efficiency improvements over traditional attention mechanisms. The implementation supports both Flash Attention v1 and v2.
+
+```python
+# Memory-efficient attention computation
+with torch.amp.autocast(device_type='cuda'):
+    flash_fn = flash_attn_qkvpacked_func
+    context_layer = flash_fn(
+        qkv_unpad,
+        cu_seqlens=cu_seqlens,
+        max_seqlen=max_seqlen,
+        dropout_p=self.attention_dropout.p if self.training else 0.0,
+        softmax_scale=self.scale,
+        causal=causal
+    )
+```
+
+- **Rotary Position Embeddings (RoPE)**: Instead of traditional positional embeddings, B6 uses RoPE for enhanced positional understanding and better generalization to different sequence lengths.
+
+```python
+def forward(self, x, seq_len=None):
+    # Compute rotary embeddings dynamically
+    if seq_len > self.max_seq_len_cached:
+        t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
+        freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.cos_cached = emb.cos()[None, None, :, :]
+        self.sin_cached = emb.sin()[None, None, :, :]
+```
+
+- **Flexible Normalization Architecture**: 
+  - Supports both Pre-LN and Post-LN configurations
+  - Uses Layer Normalization with optional bias terms
+  - Implements skip connections for improved gradient flow
+
+```python
+class FlashTransformerLayer(nn.Module):
+    def forward(self, x: torch.Tensor, attention_mask: Optional[torch.Tensor] = None):
+        if not self.config.PRE_NORM:
+            # Post-norm architecture
+            attn_output = self.attention(x, attention_mask)
+            x = x + attn_output
+            x = self.attention_layer_norm(x)
+        else:
+            # Pre-norm architecture
+            attn_output = self.attention(x, attention_mask)
+            x = x + attn_output
+```
+
+- **Optimized Feed-Forward Network**:
+  - Configurable hidden dimensions
+  - GELU activation function
+  - Dropout for regularization
+  - Optional bias terms
+
+```python
+class FeedForward(nn.Module):
+    def __init__(self, config):
+        self.fc1 = nn.Linear(config.EMBED_SIZE, config.HIDDEN_DIM,
+                            bias=config.USE_BIAS_IN_FFN)
+        self.fc2 = nn.Linear(config.HIDDEN_DIM, config.EMBED_SIZE,
+                            bias=config.USE_BIAS_IN_FFN)
+        self.activation = nn.GELU()
+```
+
+### Architecture Innovations
+
+1. **Memory-Efficient Attention**:
+   - Implements packed key-value cache for efficient memory usage
+   - Uses optimized attention patterns for causal language modeling
+   - Supports flexible attention masking patterns
+
+2. **Gradient Flow Optimization**:
+   - Carefully designed residual connections
+   - Proper initialization schemes for stable training
+   - Optional gradient checkpointing for memory efficiency
+
+3. **Scalable Design**:
+   - Hardware-aware configuration adaptation
+   - Dynamic batch size handling
+   - Automatic mixed precision support
+
+The architecture is designed to scale efficiently across different GPU configurations while maintaining training stability and optimization effectiveness. The implementation supports both research experimentation and production deployment scenarios through its flexible configuration system.
+
 
 ## 📊 Training Features
 

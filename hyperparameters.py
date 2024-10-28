@@ -75,36 +75,103 @@ from typing import Dict, Any
 
 #Hyperparameters
 class Config:
-    VOCAB_SIZE = 0 
-    EMBED_SIZE = 0    
-    NUM_HEADS = 0      
-    NUM_LAYERS = 0     
-    HIDDEN_DIM = 0 
+    # Model Architecture
+    VOCAB_SIZE: int = 0
+    EMBED_SIZE: int = 0
+    NUM_HEADS: int = 0
+    NUM_LAYERS: int = 0
+    HIDDEN_DIM: int = 0
+    MAX_POSITION_EMBEDDINGS: int = 0
     
     # Training Parameters
-    BATCH_SIZE = 0
-    SEQ_LENGTH = 0
-    EPOCHS = 0
-    LEARNING_RATE = 0
-    WARMUP_STEPS = 0
-    DROPOUT = 0
-    GRADIENT_CLIP = 0
-    NUM_WORKERS = 0
+    BATCH_SIZE: int = 0
+    SEQ_LENGTH: int = 0
+    EPOCHS: int = 0
+    LEARNING_RATE: float = 3e-4
+    WARMUP_STEPS: int = 0
+    DROPOUT: float = 0.1
+    ATTENTION_DROPOUT: float = 0.1
+    WEIGHT_DECAY: float = 0.1
+    GRADIENT_CLIP: float = 1.0
+    NUM_WORKERS: int = 0
     
+    # Optimizer Parameters (for Lion)
+    BETA1: float = 0.95
+    BETA2: float = 0.98
+    EPSILON: float = 1e-5
+    
+    # Updated Learning Rate Parameters
+    LEARNING_RATE: float = 3e-4
+    WARMUP_STEPS: int = 0  # More steps for larger model/dataset
+    MIN_LR_RATIO: float = 0.1
+    WARMUP_INIT_LR: float = 3e-6
+
     # Memory Management
-    GRADIENT_ACCUMULATION_STEPS = 0
-    MIXED_PRECISION = True
-    USE_FLASH_ATTENTION = True
+    GRADIENT_ACCUMULATION_STEPS: int = 0
+    MIXED_PRECISION: bool = True
+    USE_FLASH_ATTENTION: bool = True
+    GRADIENT_CHECKPOINTING: bool = True
+    
+    # Flash Attention Specific
+    FLASH_ATTENTION_VERSION: str = "2"
+    PAD_TO_MULTIPLE_OF: int = 8
+    
+    # Architecture Specific
+    USE_BIAS_IN_ATTN: bool = False
+    USE_BIAS_IN_FFN: bool = True
+    PRE_NORM: bool = True
+    
+    # Loss and Training
+    LABEL_SMOOTHING: float = 0.0
+    MAX_GRAD_NORM: float = 1.0
     
     # Dataset Parameters
-    DATASET_SIZE = 0
-    STREAM_BUFFER_SIZE = 0
-    CACHE_DIR = "./dataset_cache"
-    MAP_BATCH_SIZE = 0
+    DATASET_SIZE: int = 0
+    STREAM_BUFFER_SIZE: int = 0
+    CACHE_DIR: str = "./dataset_cache"
+    MAP_BATCH_SIZE: int = 0
     
     # Dataset Configuration
-    DATASET_NAME = "c4"
-    TEXT_COLUMN = "text"
+    DATASET_NAME: str = "c4"
+    TEXT_COLUMN: str = "text"
+    
+    # Logging and Checkpointing
+    LOG_INTERVAL: int = 0 
+    SAVE_INTERVAL: int = 0
+    EVAL_INTERVAL: int = 0
+
+    # Choose your dataset configuration
+    DATASET_CONFIG = {
+        'openwebtext2': {
+            'name': "the_pile_openwebtext2",
+            'text_column': 'text',
+        },
+        'redpajama': {
+            'name': "togethercomputer/RedPajama-Data-1T",
+            'text_column': 'text',
+        },
+        'oscar': {
+            'name': "oscar-corpus/OSCAR-2301",
+            'text_column': 'text',
+        },
+        'stack': {
+            'name': "bigcode/the-stack",
+            'text_column': 'content',
+        },
+        'books3': {
+            'name': "the_pile_books3",
+            'text_column': 'text',
+        },
+        'openwebtext': {
+            'name': "openwebtext",
+            'text_column': 'text'
+        },
+        'c4': {
+            'name': "allenai/c4",
+            'text_column': 'text',
+        }
+    }
+    
 
 
 @dataclass
@@ -115,7 +182,8 @@ class RTX3060Values:
     NUM_HEADS: int = 12
     NUM_LAYERS: int = 12
     HIDDEN_DIM: int = 3072
-    
+    MAX_POSITION_EMBEDDINGS: int = 2048  # Maximum sequence length for positional embeddings
+
     # Training Parameters
     BATCH_SIZE: int = 4
     SEQ_LENGTH: int = 1024
@@ -125,12 +193,39 @@ class RTX3060Values:
     DROPOUT: float = 0.1
     GRADIENT_CLIP: float = 1.0
     NUM_WORKERS: int = 4
+    ATTENTION_DROPOUT: float = 0.1        # Specific dropout for attention
+    WEIGHT_DECAY: float = 0.1             # L2 regularization factor
+
+    # Optimizer Parameters (for Lion)
+    BETA1: float = 0.95                   # First momentum coefficient
+    BETA2: float = 0.98                   # Second momentum coefficient
+    EPSILON: float = 1e-5                 # Small constant for numerical stability
+    
+    # Updated Learning Rate Parameters
+    LEARNING_RATE: float = 3e-4
+    WARMUP_STEPS: int = 2000  # Will be adjusted based on total steps
+    MIN_LR_RATIO: float = 0.1  # Final LR will be 10% of max
+    WARMUP_INIT_LR: float = 3e-6  # Start at 1% of max LR
     
     # Memory Management
     GRADIENT_ACCUMULATION_STEPS: int = 16
     MIXED_PRECISION: bool = True
     USE_FLASH_ATTENTION: bool = True
+    GRADIENT_CHECKPOINTING: bool = True    # Enable gradient checkpointing
     
+    # Flash Attention Specific
+    FLASH_ATTENTION_VERSION: str = "2"     # Using Flash Attention v2
+    PAD_TO_MULTIPLE_OF: int = 8           # Pad sequence length to multiple of 8 for optimal performance
+    
+    # Architecture Specific
+    USE_BIAS_IN_ATTN: bool = False        # Whether to use bias in attention projections
+    USE_BIAS_IN_FFN: bool = True          # Whether to use bias in FFN
+    PRE_NORM: bool = True                 # Whether to use Pre-LN or Post-LN
+    
+    # Loss and Training
+    LABEL_SMOOTHING: float = 0.0          # Label smoothing factor
+    MAX_GRAD_NORM: float = 1.0            # Maximum gradient norm for clipping
+
     # Dataset Parameters
     DATASET_SIZE: int = 50000
     STREAM_BUFFER_SIZE: int = 500000
@@ -141,14 +236,33 @@ class RTX3060Values:
     DATASET_NAME: str = "c4"
     TEXT_COLUMN: str = "text"
 
-@dataclass
+    # Logging and Checkpointing
+    LOG_INTERVAL: int = 100               # Steps between logging
+    SAVE_INTERVAL: int = 1000             # Steps between model saves
+    EVAL_INTERVAL: int = 500              # Steps between evaluations
+    
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        assert self.EMBED_SIZE % self.NUM_HEADS == 0, \
+            f"Embedding size {self.EMBED_SIZE} must be divisible by number of heads {self.NUM_HEADS}"
+        assert self.SEQ_LENGTH <= self.MAX_POSITION_EMBEDDINGS, \
+            f"Sequence length {self.SEQ_LENGTH} cannot exceed maximum position embeddings {self.MAX_POSITION_EMBEDDINGS}"
+        assert self.HIDDEN_DIM >= self.EMBED_SIZE, \
+            f"Hidden dimension {self.HIDDEN_DIM} should be >= embedding size {self.EMBED_SIZE}"
+        
+        # Compute derived values
+        self.HEAD_DIM = self.EMBED_SIZE // self.NUM_HEADS
+        assert self.HEAD_DIM % 8 == 0, \
+            "Head dimension must be divisible by 8 for optimal Flash Attention performance"
+
 class A100Values:
     # Model Architecture
-    VOCAB_SIZE: int = 50257
-    EMBED_SIZE: int = 1024
-    NUM_HEADS: int = 16
-    NUM_LAYERS: int = 24
-    HIDDEN_DIM: int = 4096
+    VOCAB_SIZE: int = 50257  # GPT-2 vocabulary size
+    EMBED_SIZE: int = 1024   # Embedding dimension
+    NUM_HEADS: int = 16      # Number of attention heads
+    NUM_LAYERS: int = 24     # Number of transformer layers
+    HIDDEN_DIM: int = 4096   # FFN hidden dimension
+    MAX_POSITION_EMBEDDINGS: int = 2048  # Maximum sequence length for positional embeddings
     
     # Training Parameters
     BATCH_SIZE: int = 16
@@ -157,13 +271,40 @@ class A100Values:
     LEARNING_RATE: float = 3e-4
     WARMUP_STEPS: int = 1000
     DROPOUT: float = 0.1
+    ATTENTION_DROPOUT: float = 0.1        # Specific dropout for attention
+    WEIGHT_DECAY: float = 0.1             # L2 regularization factor
     GRADIENT_CLIP: float = 1.0
     NUM_WORKERS: int = 8
     
+    # Optimizer Parameters (for Lion)
+    BETA1: float = 0.95                   # First momentum coefficient
+    BETA2: float = 0.98                   # Second momentum coefficient
+    EPSILON: float = 1e-5                 # Small constant for numerical stability
+    
+    # Updated Learning Rate Parameters
+    LEARNING_RATE: float = 3e-4
+    WARMUP_STEPS: int = 10000  # More steps for larger model/dataset
+    MIN_LR_RATIO: float = 0.1
+    WARMUP_INIT_LR: float = 3e-6
+
     # Memory Management
     GRADIENT_ACCUMULATION_STEPS: int = 4
     MIXED_PRECISION: bool = True
     USE_FLASH_ATTENTION: bool = True
+    GRADIENT_CHECKPOINTING: bool = True    # Enable gradient checkpointing
+    
+    # Flash Attention Specific
+    FLASH_ATTENTION_VERSION: str = "2"     # Using Flash Attention v2
+    PAD_TO_MULTIPLE_OF: int = 8           # Pad sequence length to multiple of 8 for optimal performance
+    
+    # Architecture Specific
+    USE_BIAS_IN_ATTN: bool = False        # Whether to use bias in attention projections
+    USE_BIAS_IN_FFN: bool = True          # Whether to use bias in FFN
+    PRE_NORM: bool = True                 # Whether to use Pre-LN or Post-LN
+    
+    # Loss and Training
+    LABEL_SMOOTHING: float = 0.0          # Label smoothing factor
+    MAX_GRAD_NORM: float = 1.0            # Maximum gradient norm for clipping
     
     # Dataset Parameters
     DATASET_SIZE: int = 200000
@@ -174,8 +315,27 @@ class A100Values:
     # Dataset Configuration
     DATASET_NAME: str = "c4"
     TEXT_COLUMN: str = "text"
+    
+    # Logging and Checkpointing
+    LOG_INTERVAL: int = 100               # Steps between logging
+    SAVE_INTERVAL: int = 1000             # Steps between model saves
+    EVAL_INTERVAL: int = 500              # Steps between evaluations
+    
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        assert self.EMBED_SIZE % self.NUM_HEADS == 0, \
+            f"Embedding size {self.EMBED_SIZE} must be divisible by number of heads {self.NUM_HEADS}"
+        assert self.SEQ_LENGTH <= self.MAX_POSITION_EMBEDDINGS, \
+            f"Sequence length {self.SEQ_LENGTH} cannot exceed maximum position embeddings {self.MAX_POSITION_EMBEDDINGS}"
+        assert self.HIDDEN_DIM >= self.EMBED_SIZE, \
+            f"Hidden dimension {self.HIDDEN_DIM} should be >= embedding size {self.EMBED_SIZE}"
+        
+        # Compute derived values
+        self.HEAD_DIM = self.EMBED_SIZE // self.NUM_HEADS
+        assert self.HEAD_DIM % 8 == 0, \
+            "Head dimension must be divisible by 8 for optimal Flash Attention performance"
 
-def setup_config(config_class, hardware_type: str = "rtx3060"):
+def setup_config(config_class, hardware_type: str = "auto"):
     """
     Sets up the Config class with values based on hardware type.
     
@@ -186,6 +346,10 @@ def setup_config(config_class, hardware_type: str = "rtx3060"):
     Returns:
         Modified Config class with appropriate values
     """
+
+    if hardware_type == "auto":
+        hardware_type = detect_hardware()
+
     # Select values based on hardware
     values = RTX3060Values() if hardware_type.lower() == "rtx3060" else A100Values()
     
@@ -207,6 +371,8 @@ def setup_config(config_class, hardware_type: str = "rtx3060"):
     if total_memory_required > available_memory:
         print("\nWARNING: Estimated memory requirement exceeds available GPU memory!")
         print("Consider adjusting batch size or model parameters.")
+    
+    validate_config(config_class)
     
     return config_class
 
@@ -243,3 +409,35 @@ def get_available_gpu_memory() -> float:
         prop = torch.cuda.get_device_properties(device)
         return prop.total_memory / (1024**3)
     return 0.0
+
+def validate_config(config):
+    """Validates configuration parameters."""
+    required_attrs = [
+        'VOCAB_SIZE', 'EMBED_SIZE', 'NUM_HEADS', 'NUM_LAYERS',
+        'HIDDEN_DIM', 'MAX_POSITION_EMBEDDINGS', 'BATCH_SIZE',
+        'SEQ_LENGTH', 'EPOCHS', 'LEARNING_RATE'
+    ]
+    
+    for attr in required_attrs:
+        if not hasattr(config, attr):
+            raise ValueError(f"Missing required config attribute: {attr}")
+            
+    # Validate numeric ranges
+    assert config.EMBED_SIZE > 0, "EMBED_SIZE must be positive"
+    assert config.NUM_HEADS > 0, "NUM_HEADS must be positive"
+    assert config.BATCH_SIZE > 0, "BATCH_SIZE must be positive"
+    assert 0.0 <= config.DROPOUT <= 1.0, "DROPOUT must be between 0 and 1"
+    assert config.GRADIENT_ACCUMULATION_STEPS > 0, "GRADIENT_ACCUMULATION_STEPS must be positive"
+    assert config.BATCH_SIZE % config.GRADIENT_ACCUMULATION_STEPS == 0, \
+            "BATCH_SIZE must be divisible by GRADIENT_ACCUMULATION_STEPS"
+    return True
+
+def detect_hardware():
+    """Automatically detect hardware configuration."""
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name()
+        if "3060" in gpu_name:
+            return "rtx3060"
+        elif "A100" in gpu_name:
+            return "a100"
+    return "cpu"
