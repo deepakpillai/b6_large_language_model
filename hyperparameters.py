@@ -100,6 +100,12 @@ class Config:
     BETA2: float = 0.98
     EPSILON: float = 1e-5
     
+    # Updated Learning Rate Parameters
+    LEARNING_RATE: float = 3e-4
+    WARMUP_STEPS: int = 0  # More steps for larger model/dataset
+    MIN_LR_RATIO: float = 0.1
+    WARMUP_INIT_LR: float = 3e-6
+
     # Memory Management
     GRADIENT_ACCUMULATION_STEPS: int = 0
     MIXED_PRECISION: bool = True
@@ -194,7 +200,13 @@ class RTX3060Values:
     BETA1: float = 0.95                   # First momentum coefficient
     BETA2: float = 0.98                   # Second momentum coefficient
     EPSILON: float = 1e-5                 # Small constant for numerical stability
-
+    
+    # Updated Learning Rate Parameters
+    LEARNING_RATE: float = 3e-4
+    WARMUP_STEPS: int = 2000  # Will be adjusted based on total steps
+    MIN_LR_RATIO: float = 0.1  # Final LR will be 10% of max
+    WARMUP_INIT_LR: float = 3e-6  # Start at 1% of max LR
+    
     # Memory Management
     GRADIENT_ACCUMULATION_STEPS: int = 16
     MIXED_PRECISION: bool = True
@@ -269,6 +281,12 @@ class A100Values:
     BETA2: float = 0.98                   # Second momentum coefficient
     EPSILON: float = 1e-5                 # Small constant for numerical stability
     
+    # Updated Learning Rate Parameters
+    LEARNING_RATE: float = 3e-4
+    WARMUP_STEPS: int = 10000  # More steps for larger model/dataset
+    MIN_LR_RATIO: float = 0.1
+    WARMUP_INIT_LR: float = 3e-6
+
     # Memory Management
     GRADIENT_ACCUMULATION_STEPS: int = 4
     MIXED_PRECISION: bool = True
@@ -409,7 +427,9 @@ def validate_config(config):
     assert config.NUM_HEADS > 0, "NUM_HEADS must be positive"
     assert config.BATCH_SIZE > 0, "BATCH_SIZE must be positive"
     assert 0.0 <= config.DROPOUT <= 1.0, "DROPOUT must be between 0 and 1"
-    
+    assert config.GRADIENT_ACCUMULATION_STEPS > 0, "GRADIENT_ACCUMULATION_STEPS must be positive"
+    assert config.BATCH_SIZE % config.GRADIENT_ACCUMULATION_STEPS == 0, \
+            "BATCH_SIZE must be divisible by GRADIENT_ACCUMULATION_STEPS"
     return True
 
 def detect_hardware():

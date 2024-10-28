@@ -53,13 +53,19 @@ def collate_fn(batch):
     return input_ids, attention_mask
 
 def prepare_dataset_streaming(config, tokenizer):
-    dataset = load_dataset(
-        config.DATASET_NAME,
-        streaming=True,
-        split='train',
-        trust_remote_code=True,
-        cache_dir=config.CACHE_DIR
-    ).shuffle(buffer_size=config.STREAM_BUFFER_SIZE)
+    try:
+        dataset = load_dataset(
+            config.DATASET_NAME,
+            streaming=True,
+            split='train',
+            trust_remote_code=True,
+            cache_dir=config.CACHE_DIR
+        ).shuffle(buffer_size=config.STREAM_BUFFER_SIZE)
+        if not dataset:
+            raise ValueError("Empty dataset loaded")
+            return dataset
+    except Exception as e:
+        raise RuntimeError(f"Failed to load dataset: {str(e)}")
     
     def preprocess_function(examples):
         return tokenizer(
@@ -167,210 +173,3 @@ def load_trained_model(model_path, config):
     model = modelObj.ImprovedTransformerModel(config).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
-
-
-# # Optimized Training Function to run on a i3 12100, RTX 3060 and 36 GB RAM
-# def train_model(model, train_loader, valid_loader, config, tokenizer):
-#     print("Initializing training setup...")
-    
-#     # Initialize wandb with error handling
-#     try:
-#         wandb.init(
-#             project="b6_large_language_model",
-#             config={
-#                 "learning_rate": config.LEARNING_RATE,
-#                 "architecture": "Transformers",
-#                 "dataset": config.DATASET_NAME,
-#                 "epochs": config.EPOCHS,
-#             }
-#         )
-#     except Exception as e:
-#         print(f"Warning: wandb initialization failed: {e}")
-
-#     # Initialize training components
-#     optimizer = modelObj.create_optimizer(model, config)
-    
-#     # Add checkpointing for training interruption
-#     start_epoch = 0
-#     if os.path.exists('checkpoint.pt'):
-#         print("Loading checkpoint...")
-#         checkpoint = torch.load('checkpoint.pt')
-#         model.load_state_dict(checkpoint['model_state_dict'])
-#         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-#         start_epoch = checkpoint['epoch']
-#         print(f"Resuming from epoch {start_epoch}")
-    
-#     scheduler = optim.lr_scheduler.OneCycleLR(
-#         optimizer,
-#         max_lr=config.LEARNING_RATE,
-#         epochs=config.EPOCHS,
-#         steps_per_epoch=len(train_loader),
-#         pct_start=0.05
-#     )
-    
-#     scaler = torch.amp.GradScaler(device='cuda')
-#     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
-    
-#     # Improved memory management function
-#     def cleanup_memory():
-#         torch.cuda.empty_cache()
-#         if torch.cuda.is_available():
-#             torch.cuda.synchronize()
-    
-#     # Dynamic batch size adjustment
-#     def adjust_batch_size(loss_value):
-#         if torch.isnan(loss_value) or torch.isinf(loss_value):
-#             config.BATCH_SIZE = max(1, config.BATCH_SIZE // 2)
-#             print(f"Reducing batch size to {config.BATCH_SIZE}")
-#             return True
-#         return False
-    
-#     # Initial memory cleanup
-#     cleanup_memory()
-    
-#     best_valid_loss = float('inf')
-#     best_model_path = 'best_model.pt'
-    
-#     print(f"Starting training with gradient accumulation steps: {config.GRADIENT_ACCUMULATION_STEPS}")
-    
-#     for epoch in range(start_epoch, config.EPOCHS):
-#         model.train()
-#         train_loss = 0
-#         optimizer.zero_grad()
-        
-#         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{config.EPOCHS}")
-        
-#         for batch_idx, (input_ids, attention_mask) in enumerate(progress_bar):
-#             try:
-#                 # Move tensors to device efficiently
-#                 input_ids = input_ids.to(device, non_blocking=True)
-#                 attention_mask = attention_mask.to(device, non_blocking=True)
-                
-#                 # Automatic mixed precision training
-#                 with torch.amp.autocast(device_type='cuda'):
-#                     # outputs = model(input_ids, attention_mask)
-#                     try:
-#                         outputs = model(input_ids, attention_mask)
-#                     except RuntimeError as e:
-#                         if "out of memory" in str(e):
-#                             torch.cuda.empty_cache()
-#                             # Implement proper recovery strategy
-#                             raise RuntimeError("GPU OOM - consider reducing batch size")
-#                         raise e
-                    
-#                     shift_logits = outputs[..., :-1, :].contiguous()
-#                     shift_labels = input_ids[..., 1:].contiguous()
-#                     loss = criterion(
-#                         shift_logits.view(-1, config.VOCAB_SIZE),
-#                         shift_labels.view(-1)
-#                     )
-#                     loss = loss / config.GRADIENT_ACCUMULATION_STEPS
-                
-#                 # Check for NaN/Inf loss and adjust batch size if needed
-#                 if adjust_batch_size(loss):
-#                     cleanup_memory()
-#                     continue
-                
-#                 # Gradient accumulation
-#                 scaler.scale(loss).backward()
-                
-#                 if (batch_idx + 1) % config.GRADIENT_ACCUMULATION_STEPS == 0:
-#                     torch.nn.utils.clip_grad_norm_(model.parameters(), config.GRADIENT_CLIP)
-#                     scaler.step(optimizer)
-#                     scaler.update()
-#                     scheduler.step()
-#                     optimizer.zero_grad()
-                    
-#                     # Periodic memory cleanup
-#                     if batch_idx % (config.GRADIENT_ACCUMULATION_STEPS * 10) == 0:
-#                         cleanup_memory()
-                
-#                 train_loss += loss.item() * config.GRADIENT_ACCUMULATION_STEPS
-#                 avg_loss = train_loss / (batch_idx + 1)
-                
-#                 # Update progress bar
-#                 progress_bar.set_postfix({
-#                     'loss': f'{avg_loss:.4f}',
-#                     'lr': f'{scheduler.get_last_lr()[0]:.2e}'
-#                 })
-                
-#                 # Log to wandb
-#                 wandb.log({
-#                     "batch_loss": loss.item() * config.GRADIENT_ACCUMULATION_STEPS,
-#                     "learning_rate": scheduler.get_last_lr()[0]
-#                 })
-                
-#             except RuntimeError as e:
-#                 if "out of memory" in str(e):
-#                     cleanup_memory()
-#                     if adjust_batch_size(torch.tensor(float('inf'))):
-#                         continue
-#                 raise e
-        
-#         # Save checkpoint after each epoch
-#         torch.save({
-#             'epoch': epoch + 1,
-#             'model_state_dict': model.state_dict(),
-#             'optimizer_state_dict': optimizer.state_dict(),
-#             'scheduler_state_dict': scheduler.state_dict(),
-#             'loss': train_loss,
-#         }, 'checkpoint.pt')
-        
-#         # Validation phase
-#         model.eval()
-#         valid_loss = 0
-#         cleanup_memory()  # Clean memory before validation
-        
-#         print("\nRunning validation...")
-#         with torch.no_grad():
-#             for input_ids, attention_mask in tqdm(valid_loader):
-#                 input_ids = input_ids.to(device, non_blocking=True)
-#                 attention_mask = attention_mask.to(device, non_blocking=True)
-                
-#                 with torch.amp.autocast(device_type='cuda'):
-#                     # outputs = model(input_ids, attention_mask)
-#                     try:
-#                         outputs = model(input_ids, attention_mask)
-#                     except RuntimeError as e:
-#                         if "out of memory" in str(e):
-#                             torch.cuda.empty_cache()
-#                             # Implement proper recovery strategy
-#                             raise RuntimeError("GPU OOM - consider reducing batch size")
-#                         raise e
-#                     shift_logits = outputs[..., :-1, :].contiguous()
-#                     shift_labels = input_ids[..., 1:].contiguous()
-#                     loss = criterion(
-#                         shift_logits.view(-1, config.VOCAB_SIZE),
-#                         shift_labels.view(-1)
-#                     )
-#                 valid_loss += loss.item()
-                
-#                 del outputs, shift_logits, shift_labels
-        
-#         cleanup_memory()  # Clean memory after validation
-        
-#         avg_train_loss = train_loss / len(train_loader)
-#         avg_valid_loss = valid_loss / len(valid_loader)
-        
-#         wandb.log({
-#             "epoch": epoch,
-#             "train_loss": avg_train_loss,
-#             "valid_loss": avg_valid_loss
-#         })
-        
-#         print(f"\nEpoch {epoch+1}")
-#         print(f"Average training loss: {avg_train_loss:.4f}")
-#         print(f"Average validation loss: {avg_valid_loss:.4f}")
-        
-#         # Save best model
-#         if avg_valid_loss < best_valid_loss:
-#             best_valid_loss = avg_valid_loss
-#             torch.save({
-#                 'epoch': epoch,
-#                 'model_state_dict': model.state_dict(),
-#                 'optimizer_state_dict': optimizer.state_dict(),
-#                 'scheduler_state_dict': scheduler.state_dict(),
-#                 'valid_loss': best_valid_loss,
-#                 'config': config,
-#             }, best_model_path)
-#             print(f"Saved new best model with validation loss: {best_valid_loss:.4f}")

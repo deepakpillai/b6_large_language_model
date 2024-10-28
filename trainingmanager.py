@@ -11,6 +11,7 @@ import os
 from typing import Dict, Optional, Tuple
 import model as modelObj
 from memorymanager import MemoryManager
+from lr_scheduler import OptimizedLLMScheduler
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -91,6 +92,9 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
                 "architecture": "Transformers",
                 "dataset": config.DATASET_NAME,
                 "epochs": config.EPOCHS,
+                "warmup_steps": config.WARMUP_STEPS,
+                "min_lr_ratio": config.MIN_LR_RATIO,
+                "warmup_init_lr": config.WARMUP_INIT_LR
             }
         )
     except Exception as e:
@@ -99,16 +103,21 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
     # Initialize training components
     optimizer = modelObj.create_optimizer(model, config)
     
+    # Calculate total steps before creating scheduler
+    total_steps = len(train_loader) * config.EPOCHS // config.GRADIENT_ACCUMULATION_STEPS
+    print(f"Total training steps: {total_steps}")
+    
+    # Initialize the optimized LLM scheduler
+    scheduler = OptimizedLLMScheduler(
+        optimizer=optimizer,
+        num_training_steps=total_steps,
+        num_warmup_steps=config.WARMUP_STEPS,
+        min_lr_ratio=config.MIN_LR_RATIO,
+        warmup_init_lr=config.WARMUP_INIT_LR
+    )
+    
     # Load checkpoint if exists
     start_epoch = training_manager.load_checkpoint(model, optimizer)
-    
-    scheduler = optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=config.LEARNING_RATE,
-        epochs=config.EPOCHS,
-        steps_per_epoch=len(train_loader),
-        pct_start=0.1  # Increased warmup period
-    )
     
     scaler = torch.amp.GradScaler(device='cuda')
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
@@ -117,6 +126,9 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
     training_manager.memory_manager.cleanup()
     
     print(f"Starting training with gradient accumulation steps: {config.GRADIENT_ACCUMULATION_STEPS}")
+    print(f"Learning rate schedule: warmup steps={config.WARMUP_STEPS}, initial lr={config.WARMUP_INIT_LR:.2e}")
+    
+    step = 0  # Global step counter for learning rate scheduling
     
     for epoch in range(start_epoch, config.EPOCHS):
         model.train()
@@ -158,11 +170,17 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
                 scaler.scale(loss).backward()
                 
                 if (batch_idx + 1) % config.GRADIENT_ACCUMULATION_STEPS == 0:
+                    # Unscale gradients for proper clipping
+                    scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), config.GRADIENT_CLIP)
+                    
+                    # Optimizer and scheduler steps
                     scaler.step(optimizer)
                     scaler.update()
-                    scheduler.step()
+                    scheduler.step()  # Update learning rate
                     optimizer.zero_grad()
+                    
+                    step += 1  # Increment global step counter
                     
                     # Periodic memory cleanup
                     if batch_idx % (config.GRADIENT_ACCUMULATION_STEPS * 10) == 0:
@@ -170,17 +188,19 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
                 
                 train_loss += loss.item() * config.GRADIENT_ACCUMULATION_STEPS
                 avg_loss = train_loss / (batch_idx + 1)
+                current_lr = scheduler.get_lr()[0]  # Get current learning rate
                 
                 # Update progress bar
                 progress_bar.set_postfix({
                     'loss': f'{avg_loss:.4f}',
-                    'lr': f'{scheduler.get_last_lr()[0]:.2e}'
+                    'lr': f'{current_lr:.2e}'
                 })
                 
                 # Log to wandb
                 wandb.log({
                     "batch_loss": loss.item() * config.GRADIENT_ACCUMULATION_STEPS,
-                    "learning_rate": scheduler.get_last_lr()[0]
+                    "learning_rate": current_lr,
+                    "step": step
                 })
                 
             except RuntimeError as e:
@@ -230,12 +250,14 @@ def train_model(model, train_loader, valid_loader, config, tokenizer):
         wandb.log({
             "epoch": epoch,
             "train_loss": avg_train_loss,
-            "valid_loss": avg_valid_loss
+            "valid_loss": avg_valid_loss,
+            "learning_rate_epoch": current_lr
         })
         
         print(f"\nEpoch {epoch+1}")
         print(f"Average training loss: {avg_train_loss:.4f}")
         print(f"Average validation loss: {avg_valid_loss:.4f}")
+        print(f"Current learning rate: {current_lr:.2e}")
         
         # Save best model and check for early stopping
         training_manager.save_best_model(epoch, model, optimizer, scheduler, avg_valid_loss)
