@@ -7,7 +7,7 @@ class RotaryEmbedding(nn.Module):
     #     Implements Rotary Position Embeddings (RoPE)
     #     Paper: https://arxiv.org/abs/2104.09864
     #     """
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
+    def __init__(self, dim, max_position_embeddings=32000, base=10000, device=None):
         super().__init__()
         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float().to(device) / dim))
         self.register_buffer("inv_freq", inv_freq)
