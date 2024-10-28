@@ -1,7 +1,12 @@
 torch
+ninja 
+packaging
 transformers
 datasets
 tqdm
 wandb
 numpy
 zstandard
+einops
+wheel
+flash-attn --no-build-isolation
