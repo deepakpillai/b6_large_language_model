@@ -38,8 +38,7 @@ B6 is a high-performance language model implementation that pushes the boundarie
 - **Efficient Data Loading** with prefetching and persistent workers
 
 ### Realistic Expectations
-  - With the current setup, you might achieve:
-  - Performance similar to GPT-2 Small/Medium
+  - With the current setup, you might achieve: Performance similar to GPT-2 Small/Medium
   - Good text generation capabilities
   - Basic language understanding
   - Limited reasoning abilities
