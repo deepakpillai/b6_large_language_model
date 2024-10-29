@@ -1,6 +1,6 @@
 # B6 Large Language Model (LLM) 🚀
 
-B6 is a high-performance language model implementation that pushes the boundaries of efficient transformer architecture. Built with PyTorch and optimized for modern GPUs, it combines cutting-edge techniques like Flash Attention, Rotary Position Embeddings (RoPE), and advanced memory management to deliver a powerful, scalable training framework for language models.
+B6 is a high-performance language model implementation that pushes the boundaries of efficient transformer architecture. Built with PyTorch and optimized for modern GPUs, it combines cutting-edge techniques like Flash Attention, Rotary Position Embeddings (RoPE), and advanced memory management to deliver a powerful, scalable training foundation for language models.
 
 ## ⚡ Core Features
 
